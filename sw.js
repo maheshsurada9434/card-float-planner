@@ -1,7 +1,7 @@
 // Card Float service worker.
 // Pages are fetched network-first so new versions show up right away;
 // the cached copy is only used when you're offline.
-const VERSION = 'cardfloat-v4';
+const VERSION = 'cardfloat-v5';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', event => {
