@@ -117,9 +117,33 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -1px 0 rgba(0,0,0,0.35),
       0 0 0 1px rgba(255,255,255,0.10), 0 34px 60px -26px rgba(0,0,0,0.75), 0 10px 40px -12px color-mix(in srgb, var(--c1) 70%, transparent);
     transform: rotateX(var(--rx)) rotateY(var(--ry)); transition: transform .5s var(--ease); }
-  .card-holder { perspective: 1000px; }
-  @keyframes floaty { 50% { transform: translateY(-7px); } }
+  /* The card levitates: a slow 3D sway on the wrapper, a glint that follows it, a floor shadow that breathes,
+     and the next two cards peeking behind like a wallet stack. Hover (desktop) or tilting the phone takes over. */
+  @property --mx { syntax: '<percentage>'; inherits: true; initial-value: 30%; }
+  @property --my { syntax: '<percentage>'; inherits: true; initial-value: 20%; }
+  .card-holder { perspective: 1100px; position: relative; padding: 42px 6px 34px; margin: -18px -6px -10px; }
+  .card-float { position: relative; transform-style: preserve-3d; animation: levitate 7s ease-in-out infinite; will-change: transform; }
+  .card-holder.live .card-float, .card-float:hover { animation-name: hover-only; }
+  @keyframes levitate {
+    0%, 100% { transform: translateY(0) rotateX(5deg) rotateY(-7deg) rotateZ(-.4deg); }
+    50% { transform: translateY(-14px) rotateX(-3deg) rotateY(7deg) rotateZ(.4deg); } }
+  @keyframes hover-only { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+  .card-holder:not(.live) .pcard:not(.tilting) { animation: glint 7s ease-in-out infinite; }
+  .card-holder:not(.live) .pcard.enter:not(.tilting) { animation: cardIn .7s var(--spring) both, glint 7s ease-in-out .7s infinite; }
+  @keyframes glint { 0%, 100% { --mx: 12%; --my: 8%; } 50% { --mx: 88%; --my: 34%; } }
+  .card-shadow { position: absolute; left: 12%; right: 12%; bottom: 8px; height: 26px; border-radius: 50%; z-index: -1; pointer-events: none;
+    background: radial-gradient(closest-side, rgba(15,23,42,.42), transparent); filter: blur(6px); animation: breathe 7s ease-in-out infinite; }
+  @media (prefers-color-scheme: dark) { .card-shadow { background: radial-gradient(closest-side, rgba(0,0,0,.8), transparent); } }
+  @keyframes breathe { 50% { transform: scaleX(.8); opacity: .5; } }
+  .ghost { position: absolute; inset: 0; border-radius: 20px; pointer-events: none;
+    background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.08);
+    transform: translateY(-19px) translateZ(-30px) scale(.92); opacity: .85; }
+  .ghost.g2 { transform: translateY(-36px) translateZ(-60px) scale(.84); opacity: .55; }
+  .pcard .pc-holo { position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit; mix-blend-mode: color-dodge; opacity: .14;
+    background: linear-gradient(115deg, transparent 36%, #ff7ad9 44%, #7afcff 50%, #fff27a 56%, transparent 64%);
+    background-size: 300% 300%; background-position: var(--mx) var(--my); }
   .pcard.tilting { transition: transform .08s linear; }
+  .tilt-hint { display: block; margin: 0 auto 6px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12.5px; padding: 8px 12px; cursor: pointer; }
   .pcard::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
     background:
       repeating-radial-gradient(circle at 115% 120%, transparent 0 9px, rgba(255,255,255,0.055) 9px 10px),
@@ -261,6 +285,7 @@
   .cal-cell.is-today { box-shadow: inset 0 0 0 2px var(--brass), 0 0 16px -4px var(--brass); }
   .cal-cell .d { font-size: 13px; font-weight: 700; }
   .cal-cell .c { font-size: 10.5px; font-weight: 600; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .cal-cell .sw-mini { display: block; width: 20px; height: 13px; border-radius: 3px; margin: 3px 0 1px; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 1px 2px rgba(0,0,0,.25); }
   .cal-cell .dot { position: absolute; top: 7px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--due); box-shadow: 0 0 0 0 var(--due); animation: ping 2s ease-out infinite; }
   @keyframes ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--due) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
   .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); margin: 12px 4px 0; }
@@ -376,6 +401,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
+    .card-float { transform: none; } .tilt-hint { display: none; }
   }
 </style>
 </head>
@@ -437,6 +463,11 @@ const DEFAULT_CARDS = [
 
 let storageOk = true;
 const state = loadState();
+// Phones: tilt the card with the device (iOS asks permission once, from a tap).
+let gyroOn = false, gyroBase = null;
+const gyroAsk = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'
+  && !matchMedia('(hover: hover) and (pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 const ui = {
   tab: 'planner',
   plannerDate: toKey(today()),
@@ -724,14 +755,16 @@ function renderPlanner() {
 function renderStageTop() {
   const date = fromKey(ui.plannerDate);
   const amount = posNum(ui.plannerAmount);
-  const top = rankCards(date, amount)[0];
+  const ranked = rankCards(date, amount), top = ranked[0];
   const noneFit = amount && !top.fits;
   const pct = utilPct(top.card);
   const animate = lastCardShown !== top.card.id + ui.plannerDate;
   lastCardShown = top.card.id + ui.plannerDate;
   return `
     <h1 class="stage-title${animate ? ' words' : ''}">${splitWords('Use ' + top.card.name)}<span>Best card for ${amount ? `a ${inr(amount)} spend ` : ''}${dayLabel(date)}</span></h1>
-    <div class="card-holder" aria-live="polite">
+    <div class="card-holder${gyroOn ? ' live' : ''}" aria-live="polite">
+      <div class="card-float">
+      ${ranked.slice(1, 3).map((r, i) => `<i class="ghost${i ? ' g2' : ''}" style="${finishVars(r.card)}" aria-hidden="true"></i>`).reverse().join('')}
       <div class="pcard ${animate ? 'enter' : ''}" style="${finishVars(top.card)}" role="img"
         aria-label="${esc(top.card.name)}: ${top.days} days interest-free, statement ${fmt(top.close)}, pay by ${fmt(top.due)}">
         <div class="pc-top">
@@ -749,8 +782,12 @@ function renderStageTop() {
           </div>
           ${top.avail !== Infinity ? `<div class="pc-field pc-avail">Available<div>${inr(Math.max(0, top.avail))}</div></div>` : ''}
         </div>
+        <i class="pc-holo" aria-hidden="true"></i>
       </div>
+      </div>
+      <i class="card-shadow" aria-hidden="true"></i>
     </div>
+    ${gyroAsk && !gyroOn ? '<button class="tilt-hint" data-action="gyro">Tap to tilt the card with your phone</button>' : ''}
     ${renderRunway(date, top, animate)}
     ${top.avail !== Infinity ? `
       <div class="limit">
@@ -883,7 +920,7 @@ function renderCalendar() {
     const cmp = diffDays(date, t);
     const label = `${fmt(date)}: ${top.card.name}, ${top.days} days${dueCards.length ? '. Due: ' + dueCards.map(c => c.name).join(', ') : ''}`;
     cells += `<button class="cal-cell t${tier(top.days)} ${cmp === 0 ? 'is-today' : cmp < 0 ? 'past' : ''}" data-action="cal-day" data-date="${toKey(date)}" title="${esc(label)}" aria-label="${esc(label)}">
-      <span class="d">${d}</span><span class="c">${esc(shortName(top.card.name))}</span><span class="c num">${top.days}d</span>
+      <span class="d">${d}</span><i class="sw-mini" style="${finishVars(top.card)}"></i><span class="c num">${top.days}d</span>
       ${dueCards.length ? '<span class="dot"></span>' : ''}</button>`;
   }
 
@@ -1113,6 +1150,8 @@ document.addEventListener('click', e => {
 
   else if (a === 'pick-day') { ui.plannerDate = t.dataset.date; refreshPlanner(); t.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); }
 
+  else if (a === 'gyro') startGyro();
+
   else if (a === 'cal-move') {
     const d = new Date(ui.calY, ui.calM + Number(t.dataset.dir), 1);
     ui.calY = d.getFullYear(); ui.calM = d.getMonth(); renderTab();
@@ -1214,6 +1253,27 @@ if (window.matchMedia('(hover: hover) and (pointer: fine)').matches && !window.m
     card.style.setProperty('--my', `${y * 100}%`);
   });
 }
+function onTilt(e) {
+  if (e.beta == null || e.gamma == null) return;
+  if (!gyroBase) gyroBase = { b: e.beta, g: e.gamma };
+  const card = document.querySelector('.pcard');
+  if (!card) return;
+  if (!gyroOn) { gyroOn = true; document.querySelector('.card-holder')?.classList.add('live'); document.querySelector('.tilt-hint')?.remove(); }
+  const x = Math.max(-1, Math.min(1, (e.gamma - gyroBase.g) / 25)), y = Math.max(-1, Math.min(1, (e.beta - gyroBase.b) / 25));
+  card.classList.add('tilting');
+  card.style.setProperty('--ry', `${(x * 14).toFixed(2)}deg`);
+  card.style.setProperty('--rx', `${(-y * 12).toFixed(2)}deg`);
+  card.style.setProperty('--mx', `${(50 + x * 45).toFixed(1)}%`);
+  card.style.setProperty('--my', `${(30 + y * 40).toFixed(1)}%`);
+}
+function startGyro() {
+  DeviceOrientationEvent.requestPermission()
+    .then(r => { if (r === 'granted') addEventListener('deviceorientation', onTilt); else toast('Motion access was not allowed'); })
+    .catch(() => toast('Motion access is not available here'));
+}
+// Android phones need no permission; the card follows the phone once motion events arrive.
+if (!gyroAsk && typeof DeviceOrientationEvent !== 'undefined' && !matchMedia('(hover: hover) and (pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches) addEventListener('deviceorientation', onTilt);
+
 function resetTilt(c) { c.classList.remove('tilting'); ['--rx', '--ry', '--mx', '--my'].forEach(v => c.style.removeProperty(v)); }
 
 function addPurchase() {
